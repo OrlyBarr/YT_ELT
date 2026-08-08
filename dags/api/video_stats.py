@@ -6,7 +6,7 @@ from datetime import date
 # from dotenv import load_dotenv
 # load_dotenv(dotenv_path="./.env")
 
-from airflow.decorators import task
+from airflow.sdk import task
 from airflow.models import Variable 
 
 API_KEY = Variable.get("API_KEY")
