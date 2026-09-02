@@ -6,7 +6,7 @@ from datetime import date
 # from dotenv import load_dotenv
 # load_dotenv(dotenv_path="./.env")
 
-from airflow.sdk import task
+from airflow.decorators import task
 from airflow.models import Variable 
 
 API_KEY = Variable.get("API_KEY")
@@ -141,4 +141,5 @@ if __name__ == "__main__":
     video_ids = get_video_ids(playlistId)
     video_data = extract_video_data(video_ids)
     save_to_json(video_data)
+    
 
