@@ -129,8 +129,9 @@ services:
     #   - CELERY_BACKEND_PASSWORD=${CELERY_BACKEND_PASSWORD}
     #   - POSTGRES_CONN_HOST=${POSTGRES_CONN_HOST}
     #   - POSTGRES_CONN_PORT=${POSTGRES_CONN_PORT}
+    # Host port 5433 avoids colliding with the native Windows PostgreSQL 17 service on 5432
     ports:
-      - 5432:5432
+      - 5433:5432
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
       - ./docker/postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
