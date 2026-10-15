@@ -311,45 +311,16 @@ docker exec -it airflow-worker pytest tests/unit_test.py::test_dags_integrity # 
 
 ## CI/CD
 
-The GitHub Actions workflow is [`.github/workflows/ci-cd_yt-elt.yaml`](.github/workflows/ci-cd_yt-elt.yaml). It runs on pushes to `main` and `feature/*`, on pull requests to `main`, and manually from the **Actions** tab (`workflow_dispatch`).
+The GitHub Actions workflow is [`.github/workflows/ci-cd_yt-elt.yaml`](.github/workflows/ci-cd_yt-elt.yaml). It runs on pushes to `main` and `feature/*`, and on pull requests to `main`.
 
-```mermaid
-flowchart LR
-    A[push / PR] --> B{dockerfile or<br/>requirements.txt changed?}
-    B -- yes --> C[Build & push image<br/>to Docker Hub]
-    B -- no --> D
-    C --> D{dags/, include/, tests/ or<br/>docker-compose.yaml changed?}
-    D -- yes --> E[docker compose up] --> F[Unit tests] --> G[Integration tests] --> H[End-to-end DAG runs] --> I[docker compose down]
-```
+1. **build-and-push-image**: when the Dockerfile or `requirements.txt` changes, it builds the custom Airflow image and pushes it to Docker Hub tagged `latest` and `<commit-sha>`.
+2. **unit-and-integration-and-e2e-tests**: when `dags/`, `include/` or `docker-compose.yaml` changes, it runs the test suite against the stack.
 
-**Job 1: `build-and-push-image`**
-1. Detects whether `dockerfile` or `requirements.txt` changed.
-2. If they did, it builds the custom Airflow image with Docker Buildx and pushes it to Docker Hub as `latest` and `<commit-sha>`.
+Required repository settings:
+- **Secrets:** database credentials, `API_KEY`, `FERNET_KEY`, `AIRFLOW_WWW_USER_*`, `DOCKERHUB_PASSWORD`
+- **Variables:** `DOCKERHUB_NAMESPACE`, `DOCKERHUB_REPOSITORY`, `DOCKERHUB_USERNAME`, `AIRFLOW_UID`, `CHANNEL_HANDLE`
 
-**Job 2: `unit-and-integration-and-e2e-tests`** (runs after job 1)
-1. Detects whether `dags/`, `include/`, `tests/` or `docker-compose.yaml` changed. If nothing relevant changed, the remaining steps are skipped.
-2. Starts the full stack with `docker compose up -d` and waits for `airflow-worker` to report healthy.
-3. Runs `pytest tests/unit_test.py`: Variables, Connection and DAG integrity.
-4. Runs `pytest tests/integration_test.py`: the live YouTube API and the live Postgres.
-5. Runs the pipeline end to end with `airflow dags test` for `produce_json`, `update_db` and `data_quality`.
-6. Tears the stack down with `docker compose down -v`, even if an earlier step failed.
-
-### Required repository settings
-
-Add these under **Settings → Secrets and variables → Actions**.
-
-| Type | Name |
-|------|------|
-| Secret | `API_KEY`, `FERNET_KEY`, `DOCKERHUB_PASSWORD` |
-| Secret | `AIRFLOW_WWW_USER_USERNAME`, `AIRFLOW_WWW_USER_PASSWORD` |
-| Secret | `POSTGRES_CONN_USERNAME`, `POSTGRES_CONN_PASSWORD`, `POSTGRES_CONN_HOST` (`postgres`), `POSTGRES_CONN_PORT` (`5432`) |
-| Secret | `METADATA_DATABASE_NAME`, `METADATA_DATABASE_USERNAME`, `METADATA_DATABASE_PASSWORD` |
-| Secret | `CELERY_BACKEND_NAME`, `CELERY_BACKEND_USERNAME`, `CELERY_BACKEND_PASSWORD` |
-| Secret | `ELT_DATABASE_NAME`, `ELT_DATABASE_USERNAME`, `ELT_DATABASE_PASSWORD` |
-| Variable | `DOCKERHUB_NAMESPACE`, `DOCKERHUB_REPOSITORY`, `DOCKERHUB_USERNAME` |
-| Variable | `AIRFLOW_UID` (`50000`), `CHANNEL_HANDLE` |
-
-> **Local vs. CI:** `docker-compose.yaml` is committed in "CI mode": the `env_file: .env` lines are commented out and the database variables are passed explicitly to the `postgres` service. This still works locally, because Docker Compose reads `.env` from the project root to substitute every `${...}` value.
+> In `docker-compose.yaml`, the `env_file: .env` lines are marked *"SWITCH THIS OFF/ON WHEN USING GITHUB ACTIONS"*. Toggle them depending on whether you run locally or in CI.
 
 ---
 
