@@ -93,7 +93,7 @@ YT_ELT/
 ├── .github/workflows/
 │   └── ci-cd_yt-elt.yaml             # Build/push image + tests
 ├── docker-compose.yaml
-├── dockerfile                        # Custom Airflow image
+├── Dockerfile                        # Custom Airflow image
 └── requirements.txt
 ```
 
