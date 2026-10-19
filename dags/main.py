@@ -1,3 +1,4 @@
+# YouTube ELT pipeline: produce_json -> update_db -> data_quality
 from airflow import DAG
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 import pendulum
