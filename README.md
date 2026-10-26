@@ -270,6 +270,8 @@ docker compose down -v     # also wipe the Postgres volume (re-runs DB init scri
 2. Trigger `produce_json` manually, or wait for the daily 14:00 run.
 3. `update_db` and `data_quality` run automatically in sequence.
 
+> **When does the daily run happen?** The schedule runs inside Docker on your computer, so the computer and Docker Desktop must be on at 14:00. If they were off, Airflow runs the most recent missed run as soon as the stack starts (`catchup=False` skips older ones). The date shown on a run in the UI is its **logical date**, the *start* of the 24-hour interval it covers, so a run made today can be labelled with an earlier date. The data itself is always current: the JSON file is named with today's date.
+
 Query the results from your host (Postgres is exposed on port **5433**):
 
 ```bash
@@ -311,16 +313,77 @@ docker exec -it airflow-worker pytest tests/unit_test.py::test_dags_integrity # 
 
 ## CI/CD
 
-The GitHub Actions workflow is [`.github/workflows/ci-cd_yt-elt.yaml`](.github/workflows/ci-cd_yt-elt.yaml). It runs on pushes to `main` and `feature/*`, and on pull requests to `main`.
+The GitHub Actions workflow [`.github/workflows/ci-cd_yt-elt.yaml`](.github/workflows/ci-cd_yt-elt.yaml) runs on **GitHub's servers**, so your computer doesn't need to be on. It starts in three ways:
 
-1. **build-and-push-image**: when the Dockerfile or `requirements.txt` changes, it builds the custom Airflow image and pushes it to Docker Hub tagged `latest` and `<commit-sha>`.
-2. **unit-and-integration-and-e2e-tests**: when `dags/`, `include/` or `docker-compose.yaml` changes, it runs the test suite against the stack.
+| Trigger | When |
+|---------|------|
+| `push` | A push to `main` or `feature/*` |
+| `pull_request` | A pull request to `main` |
+| `workflow_dispatch` | Manually: **Actions → CI-CD Pipeline → Run workflow** |
 
-Required repository settings:
-- **Secrets:** database credentials, `API_KEY`, `FERNET_KEY`, `AIRFLOW_WWW_USER_*`, `DOCKERHUB_PASSWORD`
-- **Variables:** `DOCKERHUB_NAMESPACE`, `DOCKERHUB_REPOSITORY`, `DOCKERHUB_USERNAME`, `AIRFLOW_UID`, `CHANNEL_HANDLE`
+```mermaid
+flowchart LR
+    A[push / PR / manual run] --> B{Dockerfile or<br/>requirements.txt changed?<br/>or manual run}
+    B -- yes --> C[Build & push image<br/>to Docker Hub]
+    B -- no --> D
+    C --> D{dags/, include/ or<br/>docker-compose.yaml changed?<br/>or manual run}
+    D -- yes --> E[docker compose up] --> F[pytest: unit + integration] --> G[End-to-end DAG runs] --> H[docker compose down]
+```
 
-> In `docker-compose.yaml`, the `env_file: .env` lines are marked *"SWITCH THIS OFF/ON WHEN USING GITHUB ACTIONS"*. Toggle them depending on whether you run locally or in CI.
+### Job 1: `build-and-push-image`
+
+| Step | What it does |
+|------|--------------|
+| Get changed files | Checks whether `Dockerfile` or `requirements.txt` changed |
+| Set up Docker Buildx | Prepares the Docker image builder |
+| Log in to DockerHub | Uses `DOCKERHUB_USERNAME` + `DOCKERHUB_PASSWORD` |
+| Build and push Docker image | Runs the Dockerfile (`pip install -r requirements.txt`) and pushes the image as `latest` and `<commit-sha>` |
+
+### Job 2: `unit-and-integration-and-e2e-tests` (runs after job 1)
+
+| Step | What it does |
+|------|--------------|
+| Get changed files | Checks whether `dags/`, `include/` or `docker-compose.yaml` changed |
+| Set up Docker Compose | `docker compose up -d` starts the whole stack on the GitHub machine, pulling the image from Docker Hub |
+| Run Unit and Integration Tests | `pytest tests/ -v` inside `airflow-worker` |
+| Run End-to-End DAG Tests | `airflow dags test` for `produce_json`, `update_db` and `data_quality`: real YouTube API data, loaded into Postgres and checked with Soda |
+| Tear down Docker Compose | `docker compose down` |
+
+Each step runs only if the relevant files changed **or** the run was started manually:
+
+```yaml
+if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
+```
+
+A push that changes only other files, such as the README, finishes in seconds with these steps shown as skipped (⊘). To run the full pipeline at any time, click **Run workflow**.
+
+### Required repository settings
+
+Set these under **Settings → Secrets and variables → Actions**:
+
+| Type | Name |
+|------|------|
+| Secret | `API_KEY`, `FERNET_KEY`, `DOCKERHUB_PASSWORD` |
+| Secret | `AIRFLOW_WWW_USER_USERNAME`, `AIRFLOW_WWW_USER_PASSWORD` |
+| Secret | `POSTGRES_CONN_USERNAME`, `POSTGRES_CONN_PASSWORD`, `POSTGRES_CONN_HOST` (`postgres`), `POSTGRES_CONN_PORT` (`5432`) |
+| Secret | `METADATA_DATABASE_NAME`, `METADATA_DATABASE_USERNAME`, `METADATA_DATABASE_PASSWORD` |
+| Secret | `CELERY_BACKEND_NAME`, `CELERY_BACKEND_USERNAME`, `CELERY_BACKEND_PASSWORD` |
+| Secret | `ELT_DATABASE_NAME`, `ELT_DATABASE_USERNAME`, `ELT_DATABASE_PASSWORD` |
+| Variable | `DOCKERHUB_NAMESPACE`, `DOCKERHUB_REPOSITORY`, `DOCKERHUB_USERNAME` |
+| Variable | `AIRFLOW_UID` (`50000`), `CHANNEL_HANDLE` |
+
+> `POSTGRES_CONN_HOST` must be `postgres`, the service name in Docker Compose, not `localhost`.
+
+### Getting a new image on your computer
+
+After CI pushes a new image, `docker compose up -d` alone keeps using the `latest` you already have. To download the new one:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+> **Local vs. CI:** `docker-compose.yaml` is committed in "CI mode": the `env_file: .env` lines are commented out and the database variables are passed explicitly to the `postgres` service. It still works locally, because Docker Compose reads `.env` from the project root to substitute every `${...}` value.
 
 ---
 
@@ -332,6 +395,7 @@ Required repository settings:
 | `update_db` fails with `FileNotFoundError` | It reads `data/YT_data_<today>.json`, so `produce_json` must have run **today** first. |
 | Port 5432 already in use | The compose file maps Postgres to host port **5433** to avoid a local Postgres install. |
 | Databases missing after changing `.env` | The DB init script only runs on the first volume creation. Run `docker compose down -v` and start again. |
+| CI run is green but the test steps show ⊘ | The steps were skipped because no file in `dags/`, `include/` or `docker-compose.yaml` changed. Use **Run workflow** to run everything. |
 | `pull access denied` for the Airflow image | Build the image locally (step 3) or check `DOCKERHUB_NAMESPACE`/`DOCKERHUB_REPOSITORY`. |
 
 ---
