@@ -31,7 +31,7 @@ All three DAGs are defined in `dags/main.py`. They are chained with `TriggerDagR
 
 1. `produce_json` (daily 14:00 Asia/Jerusalem): `dags/api/video_stats.py` gets the uploads playlist, then the video IDs, then video details in batches of 50, and writes them to `./data/YT_data_<today>.json`.
 2. `update_db`: `dags/datawarehouse/dwh.py` has `staging_table` and `core_table`.
-3. `data_quality`: `dags/dataquality/soda.py` runs one `BashOperator` per schema, executing `soda scan`.
+3. `data_quality`: `dags/dataquality/soda.py` runs one `BashOperator` per schema, executing `soda scan`. Then `build_dashboard` (`dags/dashboard/build_dashboard.py`) reads `core.yt_api` and injects it as JSON into `dags/dashboard/template.html`, writing `./data/dashboard/yt_dashboard.html` (gitignored). Its "Last 8 samples" section (`SAMPLE_COUNT`) reads the newest 9 `./data/YT_data_*.json` extracts, one extra for the oldest delta,, because the core table has no history.
 
 Things that only become clear across several files:
 
@@ -40,7 +40,7 @@ Things that only become clear across several files:
 - **Each run fully syncs the table.** It upserts every row (update if `Video_ID` exists, otherwise insert) and then deletes IDs that are no longer in the source. Core adds `Video_Type` (Short if ≤60s) and converts the ISO-8601 `Duration` to `TIME` (`data_transformation.py`). Both schemas' tables are created in `data_utils.create_table`, and both are named `yt_api`. Column names are quoted mixed-case identifiers.
 - **Config comes from environment variables, not the Airflow UI.** `AIRFLOW_VAR_API_KEY`, `AIRFLOW_VAR_CHANNEL_HANDLE` and `AIRFLOW_CONN_POSTGRES_DB_YT_ELT` are built in `docker-compose.yaml` from `.env` values. `video_stats.py` calls `Variable.get` **at import time**, so DAG parsing (and `test_dags_integrity`) fails if those variables are missing. Soda's `configuration.yml` reads the same `ELT_*`/`POSTGRES_CONN_*` environment variables.
 - **One Postgres container holds three databases.** These are metadata, celery backend and ELT, created by `docker/postgres/init-multiple-databases.sh` on the first volume init only. The host port is **5433** (5432 is used by a native Windows Postgres).
-- `tests/unit_test.py::test_dags_integrity` asserts exact DAG IDs and task counts (5/3/2). Update it when you add or remove tasks. `tests/integration_test.py` calls the real YouTube API and the real ELT database.
+- `tests/unit_test.py::test_dags_integrity` asserts exact DAG IDs and task counts (5/3/3). Update it when you add or remove tasks. `tests/integration_test.py` calls the real YouTube API and the real ELT database.
 
 ## Local vs. GitHub Actions
 

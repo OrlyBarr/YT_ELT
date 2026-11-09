@@ -1,4 +1,4 @@
-# YouTube ELT pipeline: produce_json -> update_db -> data_quality
+# YouTube ELT pipeline: produce_json -> update_db -> data_quality (-> build_dashboard)
 from airflow import DAG
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 import pendulum
@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from api.video_stats import get_playlist_id, get_video_ids, extract_video_data, save_to_json
 from datawarehouse.dwh import staging_table, core_table
 from dataquality.soda import yt_elt_data_quality
+from dashboard.build_dashboard import build_dashboard_task
 
 # Define the local timezone
 local_tz = pendulum.timezone("Asia/Jerusalem")
@@ -83,9 +84,11 @@ with DAG(
     # Define tasks
     soda_validate_staging = yt_elt_data_quality(staging_schema)
     soda_validate_core = yt_elt_data_quality(core_schema)
-    
+    # Rebuild the HTML dashboard only after the core layer passes its checks
+    refresh_dashboard = build_dashboard_task()
+
 
     # Define dependencies
-    soda_validate_staging >> soda_validate_core
+    soda_validate_staging >> soda_validate_core >> refresh_dashboard
 
     

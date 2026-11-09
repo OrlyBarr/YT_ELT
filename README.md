@@ -20,6 +20,7 @@ An end-to-end **ELT pipeline** that extracts video statistics for a YouTube chan
 - [Data Quality](#data-quality)
 - [Getting Started](#getting-started)
 - [Running the Pipeline](#running-the-pipeline)
+- [Dashboard](#dashboard)
 - [Testing](#testing)
 - [CI/CD](#cicd)
 - [Troubleshooting](#troubleshooting)
@@ -33,6 +34,7 @@ flowchart LR
     A[YouTube Data API v3] --> B["produce_json<br/>extract → data/YT_data_&lt;date&gt;.json"]
     B --> C["update_db<br/>staging.yt_api → core.yt_api"]
     C --> D["data_quality<br/>Soda scans (staging + core)"]
+    D --> E["build_dashboard<br/>data/dashboard/yt_dashboard.html"]
     C -.-> P[(PostgreSQL<br/>ELT database)]
 ```
 
@@ -78,8 +80,11 @@ YT_ELT/
 │   │   ├── data_modification.py      # insert / update / delete rows
 │   │   ├── data_transformation.py    # Duration parsing + Video_Type
 │   │   └── data_utils.py             # Connection, schema & table creation
-│   └── dataquality/
-│       └── soda.py                   # BashOperator running `soda scan`
+│   ├── dataquality/
+│   │   └── soda.py                   # BashOperator running `soda scan`
+│   └── dashboard/
+│       ├── build_dashboard.py        # Reads core.yt_api, writes the HTML dashboard
+│       └── template.html             # Dashboard page (Chart.js), data injected at build time
 ├── include/soda/
 │   ├── configuration.yml             # Soda data source (Postgres)
 │   └── checks.yml                    # Data quality checks
@@ -141,6 +146,7 @@ Each run **fully syncs** the target table. Existing `Video_ID`s are updated, new
 |------|-------------|
 | `soda_test_staging` | Runs Soda checks against `staging.yt_api` |
 | `soda_test_core` | Runs Soda checks against `core.yt_api` |
+| `build_dashboard` | Rebuilds `data/dashboard/yt_dashboard.html` from `core.yt_api`. It runs only if the core checks pass |
 
 ---
 
@@ -292,6 +298,28 @@ docker exec -it airflow-worker soda scan -d pg_datasource \
 
 ---
 
+## Dashboard
+
+After every successful `data_quality` run, the `build_dashboard` task writes a self-contained HTML dashboard to `data/dashboard/yt_dashboard.html`. Open it in a browser from your host. It needs internet access to load Chart.js.
+
+It shows:
+
+- **Videos uploaded per day, week or month**, split into Normal videos and Shorts.
+- **Uploads by day of week** and **median views per video by day of week**, with a comparison table.
+- **Views and likes** by upload period, plus KPI tiles and the top 10 videos by views.
+- **Last 8 samples**: the video ID count, total views and total likes at each of the last 8 daily extracts, today's included, with the growth since the previous one. `core.yt_api` keeps only the latest values, so this history is read from the `data/YT_data_<date>.json` files. Deleting old extracts shortens it.
+- A date-range filter (30 days to all time) and a grouping switch.
+
+The page reloads itself every 15 minutes, so an open tab picks up new DWH data after the next pipeline run. It warns when the data is 2 or more days old. To rebuild it by hand:
+
+```bash
+docker exec airflow-worker python /opt/airflow/dags/dashboard/build_dashboard.py
+```
+
+The core table holds the latest snapshot of each video, so views and likes are lifetime totals as of the last load. Upload dates are in UTC.
+
+---
+
 ## Testing
 
 The tests run inside the worker container (`tests/` is mounted at `/opt/airflow/tests`):
@@ -304,7 +332,7 @@ docker exec -it airflow-worker pytest tests/unit_test.py::test_dags_integrity # 
 
 | File | What it covers |
 |------|----------------|
-| `unit_test.py` | Mocked Airflow Variables and Connection, plus **DAG integrity**: no import errors, exactly 3 DAGs, and task counts of 5 / 3 / 2 |
+| `unit_test.py` | Mocked Airflow Variables and Connection, plus **DAG integrity**: no import errors, exactly 3 DAGs, and task counts of 5 / 3 / 3 |
 | `integration_test.py` | A real call to the YouTube API (expects HTTP 200) and a real `SELECT 1` on the ELT database |
 
 > If you add or remove tasks, update the expected task counts in `test_dags_integrity`.

@@ -12,3 +12,6 @@ logs/
 # Generated raw data extracts, except one kept as a sample of the output shape
 data/*.json
 !data/YT_data_2026-09-19.json
+
+# Generated HTML dashboard (rebuilt by the data_quality DAG)
+data/dashboard/

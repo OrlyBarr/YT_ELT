@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The Airflow build_dashboard task rewrites this file after every validated load.
+     Reloading every 15 minutes lets an open tab pick up new DWH data on its own. -->
+<meta http-equiv="refresh" content="900">
+<title>YouTube Channel Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --warning: #fab219;
+    --good-text: #006300;
+    --chip-on: #0b0b0b;
+    --chip-on-text: #fcfcfb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --good-text: #0ca30c;
+      --chip-on: #f0efec;
+      --chip-on-text: #1a1a19;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good-text: #0ca30c;
+    --chip-on: #f0efec;
+    --chip-on-text: #1a1a19;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { margin-bottom: 12px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); margin: 0; }
+  .stale { display: none; align-items: center; gap: 6px; margin-top: 6px; color: var(--text-primary); }
+  .stale.show { display: inline-flex; }
+  .stale::before { content: "!"; display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--warning); color: #0b0b0b; font-weight: 700; font-size: 11px; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0 20px; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+  .seg button { border: 0; background: transparent; color: var(--text-secondary); font: inherit; padding: 6px 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-text); font-weight: 600; }
+  .filters .label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .k { color: var(--text-secondary); font-size: 13px; }
+  .tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile.hero .v { font-size: 48px; line-height: 1.05; }
+  .tile .n { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 16px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .card .desc { color: var(--text-secondary); font-size: 13px; margin: 2px 0 10px; }
+  .legend { display: flex; gap: 16px; color: var(--text-secondary); font-size: 13px; margin-bottom: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+  .chart { position: relative; height: 260px; }
+  .chart.tall { height: 300px; }
+  .chart.short { height: 200px; }
+  .samples { margin-bottom: 24px; }
+  .section-head h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .section-head .desc { color: var(--text-secondary); font-size: 13px; margin: 2px 0 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+  .grid3 .card.wide { grid-column: 1 / -1; }
+  .delta-up { color: var(--good-text); }
+  .muted { color: var(--text-muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  td a { color: var(--text-primary); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+  .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>YouTube channel dashboard</h1>
+    <p class="sub" id="asof"></p>
+    <div class="stale" id="stale"></div>
+  </header>
+
+  <div class="filters">
+    <span class="label">Upload date</span>
+    <div class="seg" id="rangeSeg" role="group" aria-label="Upload date range">
+      <button data-range="30">30 days</button>
+      <button data-range="90">90 days</button>
+      <button data-range="365">12 months</button>
+      <button data-range="1095">3 years</button>
+      <button data-range="all">All time</button>
+    </div>
+    <span class="label">Group by</span>
+    <div class="seg" id="grainSeg" role="group" aria-label="Time grain">
+      <button data-grain="day">Day</button>
+      <button data-grain="week">Week</button>
+      <button data-grain="month">Month</button>
+    </div>
+  </div>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="samples" id="samples">
+    <div class="section-head">
+      <h2 id="samplesTitle">Last 8 samples</h2>
+      <p class="desc" id="samplesDesc">The channel's totals at each of the last 8 daily data pulls, up to the latest one, and how much they grew since the pull before. This section covers all videos and ignores the upload-date filter.</p>
+    </div>
+    <div class="grid3">
+      <article class="card">
+        <h2>Video IDs per sample</h2>
+        <p class="desc">Videos on the channel at each pull.</p>
+        <div class="chart short"><canvas id="sampleCountChart" role="img" aria-label="Video IDs per sample"></canvas></div>
+      </article>
+      <article class="card">
+        <h2>Views gained per day</h2>
+        <p class="desc">Growth in total views since the previous sample, divided by the days between them.</p>
+        <div class="chart short"><canvas id="sampleViewsChart" role="img" aria-label="Views gained per day between samples"></canvas></div>
+      </article>
+      <article class="card">
+        <h2>Likes gained per day</h2>
+        <p class="desc">Growth in total likes since the previous sample, divided by the days between them.</p>
+        <div class="chart short"><canvas id="sampleLikesChart" role="img" aria-label="Likes gained per day between samples"></canvas></div>
+      </article>
+      <article class="card wide">
+        <div class="scroll"><table id="sampleTable"></table></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="grid" id="grid">
+    <article class="card wide">
+      <h2 id="uploadsTitle">Videos uploaded per day</h2>
+      <p class="desc">Count of distinct video IDs by upload date (UTC), split by video type. Shorts are 60 seconds or less.</p>
+      <div class="legend"><span style="--c: var(--series-1)">Normal</span><span style="--c: var(--series-2)">Short</span></div>
+      <div class="chart tall"><canvas id="uploadsChart" role="img" aria-label="Videos uploaded over time"></canvas></div>
+    </article>
+
+    <article class="card">
+      <h2>Uploads by day of week</h2>
+      <p class="desc">Which weekdays the channel publishes on, for the selected range.</p>
+      <div class="chart"><canvas id="dowCountChart" role="img" aria-label="Uploads by weekday"></canvas></div>
+    </article>
+
+    <article class="card">
+      <h2>Median views per video by day of week</h2>
+      <p class="desc">Does the upload day change how a video performs? The median ignores single viral outliers.</p>
+      <div class="chart"><canvas id="dowViewsChart" role="img" aria-label="Median views by weekday"></canvas></div>
+    </article>
+
+    <article class="card wide">
+      <h2>Day-of-week comparison</h2>
+      <p class="desc">The numbers behind the two weekday charts. The busiest weekday is in bold.</p>
+      <div class="scroll"><table id="dowTable"></table></div>
+    </article>
+
+    <article class="card">
+      <h2 id="viewsTitle">Views by upload day</h2>
+      <p class="desc">Lifetime views to date of the videos uploaded in each period.</p>
+      <div class="chart"><canvas id="viewsChart" role="img" aria-label="Views by upload period"></canvas></div>
+    </article>
+
+    <article class="card">
+      <h2 id="likesTitle">Likes by upload day</h2>
+      <p class="desc">Lifetime likes to date of the videos uploaded in each period.</p>
+      <div class="chart"><canvas id="likesChart" role="img" aria-label="Likes by upload period"></canvas></div>
+    </article>
+
+    <article class="card wide">
+      <h2>Top 10 videos by views</h2>
+      <p class="desc">Among videos uploaded in the selected range.</p>
+      <div class="scroll"><table id="topTable"></table></div>
+    </article>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const DATA = /*__DASHBOARD_DATA__*/null;
+
+(function () {
+  "use strict";
+  const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const DOW_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const DAY_MS = 86400000;
+  const DEFAULT_GRAIN = { "30": "day", "90": "day", "365": "week", "1095": "month", "all": "month" };
+
+  // ---------- data ----------
+  const videos = ((DATA && DATA.videos) || []).map(r => {
+    const day = r[2].slice(0, 10);
+    const d = new Date(day + "T00:00:00Z");
+    return {
+      id: r[0], title: r[1], day, date: d,
+      dow: (d.getUTCDay() + 6) % 7,            // 0 = Monday
+      durationS: r[3], type: r[4], views: r[5], likes: r[6], comments: r[7]
+    };
+  });
+  const generatedAt = DATA ? new Date(DATA.generated_at) : new Date();
+  const anchor = new Date(Date.UTC(generatedAt.getUTCFullYear(), generatedAt.getUTCMonth(), generatedAt.getUTCDate()));
+
+  // ---------- state (remembered across the auto-reload) ----------
+  const state = { range: "90", grain: "day" };
+  try { Object.assign(state, JSON.parse(localStorage.getItem("ytDashState") || "{}")); } catch (e) {}
+  if (!(state.range in DEFAULT_GRAIN)) state.range = "90";
+  if (!["day", "week", "month"].includes(state.grain)) state.grain = DEFAULT_GRAIN[state.range];
+  const save = () => { try { localStorage.setItem("ytDashState", JSON.stringify(state)); } catch (e) {} };
+
+  // ---------- formatting ----------
+  const nf = new Intl.NumberFormat("en-US");
+  const cf = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+  const fmt = n => nf.format(Math.round(n));
+  const compact = n => Math.abs(n) >= 10000 ? cf.format(n) : nf.format(Math.round(n));
+  const isoDay = d => d.toISOString().slice(0, 10);
+  const prettyDay = d => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  const median = arr => {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  const per1k = (likes, views) => views ? likes / views * 1000 : 0;
+  const durationText = s => {
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(sec).padStart(2, "0");
+  };
+
+  // ---------- bucketing ----------
+  function bucketStart(d, grain) {
+    if (grain === "month") return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+    if (grain === "week") return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY_MS);
+    return d;
+  }
+  function nextBucket(d, grain) {
+    if (grain === "month") return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+    return new Date(d.getTime() + (grain === "week" ? 7 : 1) * DAY_MS);
+  }
+  function bucketLabel(d, grain) {
+    const yy = String(d.getUTCFullYear()).slice(2);
+    if (grain === "month") return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    if (grain === "week") return `Wk of ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${yy}`;
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${yy}`;
+  }
+
+  function rangeStart() {
+    if (state.range === "all") return videos.length ? videos[0].date : anchor;
+    return new Date(anchor.getTime() - (Number(state.range) - 1) * DAY_MS);
+  }
+  function filtered() {
+    const start = rangeStart();
+    return videos.filter(v => v.date >= start && v.date <= anchor);
+  }
+
+  // One bucket per day/week/month in the range, zero-filled so quiet days show as gaps.
+  function series(rows) {
+    const map = new Map(), order = [];
+    let b = bucketStart(rangeStart(), state.grain);
+    const end = bucketStart(anchor, state.grain);
+    while (b <= end) {
+      const key = isoDay(b);
+      map.set(key, { start: b, normal: 0, short: 0, views: 0, likes: 0 });
+      order.push(key);
+      b = nextBucket(b, state.grain);
+    }
+    for (const v of rows) {
+      const s = map.get(isoDay(bucketStart(v.date, state.grain)));
+      if (!s) continue;
+      if (v.type === "Short") s.short++; else s.normal++;
+      s.views += v.views; s.likes += v.likes;
+    }
+    return order.map(k => map.get(k));
+  }
+
+  function byWeekday(rows) {
+    const out = DOW.map((name, i) => ({ i, count: 0, views: [], viewsSum: 0, likes: 0, shorts: 0 }));
+    for (const v of rows) {
+      const o = out[v.dow];
+      o.count++; o.views.push(v.views); o.viewsSum += v.views; o.likes += v.likes;
+      if (v.type === "Short") o.shorts++;
+    }
+    out.forEach(o => { o.median = median(o.views); o.avg = o.count ? o.viewsSum / o.count : 0; });
+    return out;
+  }
+
+  // ---------- theme ----------
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const theme = () => ({
+    s1: css("--series-1"), s2: css("--series-2"), surface: css("--surface-1"),
+    primary: css("--text-primary"), text: css("--text-secondary"), muted: css("--text-muted"),
+    grid: css("--grid"), axis: css("--axis")
+  });
+
+  // Value label at the tip of each bar. Only enabled on the 7-bar weekday charts.
+  const tipLabels = {
+    id: "tipLabels",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.fillStyle = opts.color;
+      ctx.font = "12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      chart.getDatasetMeta(0).data.forEach((el, i) => {
+        const val = chart.data.datasets[0].data[i];
+        if (val) ctx.fillText(opts.format(val), el.x, el.y - 4);
+      });
+      ctx.restore();
+    }
+  };
+
+  const charts = {};
+  function baseOptions(t, { stacked = false, tickFmt = compact, maxTicks = 10 } = {}) {
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      layout: { padding: { top: 18 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: t.surface, titleColor: t.primary, bodyColor: t.text, footerColor: t.primary,
+          borderColor: t.grid, borderWidth: 1, padding: 10, boxPadding: 4,
+          callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` }
+        },
+        tipLabels: { enabled: false }
+      },
+      scales: {
+        x: {
+          stacked, grid: { display: false }, border: { color: t.axis },
+          ticks: { color: t.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: maxTicks }
+        },
+        y: {
+          stacked, beginAtZero: true, grid: { color: t.grid }, border: { display: false },
+          ticks: { color: t.muted, precision: 0, callback: v => tickFmt(v) }
+        }
+      }
+    };
+  }
+  const bar = (label, data, color, extra = {}) => ({
+    label, data, backgroundColor: color, hoverBackgroundColor: color,
+    maxBarThickness: 24, borderRadius: 4, borderSkipped: "start", ...extra
+  });
+  function draw(id, config) {
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(document.getElementById(id), config);
+  }
+
+  // ---------- render ----------
+  const tile = (k, v, n, hero) =>
+    `<div class="tile${hero ? " hero" : ""}"><div class="k">${k}</div><div class="v">${v}</div>${n ? `<div class="n">${n}</div>` : ""}</div>`;
+
+  // ---------- last 8 samples (one per JSON extract, independent of the upload-date filter) ----------
+  const allSamples = ((DATA && DATA.samples) || []).map(sm => {
+    const d = new Date(sm.date + "T00:00:00Z");
+    const prevD = sm.prev_date ? new Date(sm.prev_date + "T00:00:00Z") : null;
+    const days = prevD ? Math.round((d - prevD) / DAY_MS) : null;
+    const viewsGained = sm.prev_views == null ? null : sm.views - sm.prev_views;
+    const likesGained = sm.prev_likes == null ? null : sm.likes - sm.prev_likes;
+    return {
+      ...sm, d, days, viewsGained, likesGained,
+      viewsPerDay: days ? viewsGained / days : null,
+      likesPerDay: days ? likesGained / days : null,
+      label: `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
+    };
+  });
+  const signed = n => n == null ? "–" : (n > 0 ? "+" : "") + fmt(n);
+
+  function renderSamples(t) {
+    const samples = allSamples;
+    const latestDate = allSamples.length ? allSamples[allSamples.length - 1].date : null;
+    const todayDate = isoDay(anchor);
+    const labels = samples.map(sm => sm.label);
+    const tooltipTitle = items => {
+      const sm = samples[items[0].dataIndex];
+      return prettyDay(sm.d) + (sm.days ? ` · ${sm.days} day${sm.days === 1 ? "" : "s"} after the previous sample` : "");
+    };
+
+    // Line, not bars: counts barely move, so the axis zooms in instead of starting at zero.
+    const countOpts = baseOptions(t, { tickFmt: v => nf.format(v), maxTicks: 7 });
+    countOpts.scales.y.beginAtZero = false;
+    countOpts.scales.y.grace = 1;
+    countOpts.layout.padding.right = 18;   // room for the newest point's label
+    countOpts.plugins.tipLabels = { enabled: samples.length <= 8, color: t.text, format: v => nf.format(v) };
+    countOpts.plugins.tooltip.callbacks.title = tooltipTitle;
+    countOpts.plugins.tooltip.callbacks.afterLabel = c => {
+      const sm = samples[c.dataIndex];
+      return sm.new_videos == null ? "" : ` ${fmt(sm.new_videos)} new · ${fmt(sm.removed_videos)} removed`;
+    };
+    draw("sampleCountChart", {
+      type: "line",
+      data: { labels, datasets: [{
+        label: "Video IDs", data: samples.map(sm => sm.videos), borderColor: t.s1, backgroundColor: t.s1,
+        borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: t.surface, pointBorderWidth: 2, tension: 0
+      }] },
+      options: countOpts
+    });
+
+    const gainChart = (id, label, key, totalKey) => {
+      const opts = baseOptions(t, { maxTicks: 7 });
+      opts.plugins.tooltip.callbacks.title = tooltipTitle;
+      opts.plugins.tooltip.callbacks.afterLabel = c => {
+        const sm = samples[c.dataIndex];
+        return sm[totalKey] == null ? "" : ` ${signed(sm[totalKey])} in total`;
+      };
+      draw(id, {
+        type: "bar",
+        data: { labels, datasets: [bar(label, samples.map(sm => sm[key]), t.s1)] },
+        options: opts
+      });
+    };
+    gainChart("sampleViewsChart", "Views per day", "viewsPerDay", "viewsGained");
+    gainChart("sampleLikesChart", "Likes per day", "likesPerDay", "likesGained");
+
+    const up = n => n == null ? `<span class="muted">–</span>` : `<span class="${n > 0 ? "delta-up" : ""}">${signed(n)}</span>`;
+    document.getElementById("sampleTable").innerHTML =
+      `<thead><tr><th>Sample</th><th class="num">Days since previous</th><th class="num">Video IDs</th>
+        <th class="num">New</th><th class="num">Removed</th><th class="num">Total views</th><th class="num">Views gained</th>
+        <th class="num">Views / day</th><th class="num">Total likes</th><th class="num">Likes gained</th><th class="num">Likes / day</th></tr></thead><tbody>` +
+      [...samples].reverse().map(sm => `<tr class="${sm.date === latestDate ? "best" : ""}"><td>${prettyDay(sm.d)}${
+        sm.date === latestDate ? ` <span class="pill">${sm.date === todayDate ? "Today's pull" : "Latest pull"}</span>` : ""}</td>
+        <td class="num">${sm.days == null ? "–" : sm.days}</td>
+        <td class="num">${fmt(sm.videos)}</td>
+        <td class="num">${up(sm.new_videos)}</td>
+        <td class="num">${sm.removed_videos == null ? "–" : fmt(sm.removed_videos)}</td>
+        <td class="num">${fmt(sm.views)}</td>
+        <td class="num">${up(sm.viewsGained)}</td>
+        <td class="num">${sm.viewsPerDay == null ? "–" : fmt(sm.viewsPerDay)}</td>
+        <td class="num">${fmt(sm.likes)}</td>
+        <td class="num">${up(sm.likesGained)}</td>
+        <td class="num">${sm.likesPerDay == null ? "–" : fmt(sm.likesPerDay)}</td></tr>`).join("") + "</tbody>";
+  }
+
+  function render() {
+    const t = theme();
+    const rows = filtered();
+    if (allSamples.length) renderSamples(t);
+
+    document.querySelectorAll("#rangeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.range === state.range)));
+    document.querySelectorAll("#grainSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.grain === state.grain)));
+
+    // KPI tiles
+    const views = rows.reduce((a, v) => a + v.views, 0);
+    const likes = rows.reduce((a, v) => a + v.likes, 0);
+    const shorts = rows.filter(v => v.type === "Short").length;
+    const activeDays = new Set(rows.map(v => v.day)).size;
+    const wd = byWeekday(rows);
+    const busiest = rows.length ? wd.reduce((a, b) => b.count > a.count ? b : a) : null;
+    document.getElementById("tiles").innerHTML =
+      tile("Videos uploaded", fmt(rows.length), `on ${fmt(activeDays)} distinct days · ${fmt(shorts)} Shorts`, true) +
+      tile("Views", compact(views), "lifetime views of these videos") +
+      tile("Likes", compact(likes), "lifetime likes of these videos") +
+      tile("Likes per 1K views", per1k(likes, views).toFixed(1), "engagement rate") +
+      tile("Median views per video", compact(median(rows.map(v => v.views))), "a typical video") +
+      tile("Busiest upload day", busiest ? DOW_LONG[busiest.i] : "–",
+           busiest ? `${fmt(busiest.count)} uploads, ${Math.round(busiest.count / rows.length * 100)}% of the total` : "no uploads in range");
+
+    // Uploads over time, stacked by type
+    const s = series(rows);
+    const labels = s.map(b => bucketLabel(b.start, state.grain));
+    document.getElementById("uploadsTitle").textContent = `Videos uploaded per ${state.grain}`;
+    document.getElementById("viewsTitle").textContent = `Views by upload ${state.grain}`;
+    document.getElementById("likesTitle").textContent = `Likes by upload ${state.grain}`;
+
+    const upOpts = baseOptions(t, { stacked: true, tickFmt: v => nf.format(v), maxTicks: 12 });
+    upOpts.plugins.tooltip.callbacks.footer = items => `Total: ${fmt(items.reduce((a, i) => a + i.parsed.y, 0))}`;
+    draw("uploadsChart", {
+      type: "bar",
+      data: { labels, datasets: [
+        bar("Normal", s.map(b => b.normal), t.s1, { borderRadius: 0 }),
+        bar("Short", s.map(b => b.short), t.s2)
+      ] },
+      options: upOpts
+    });
+
+    // Weekday comparison
+    const countOpts = baseOptions(t, { tickFmt: v => nf.format(v) });
+    countOpts.plugins.tipLabels = { enabled: true, color: t.text, format: v => nf.format(v) };
+    countOpts.plugins.tooltip.callbacks.afterLabel = c => {
+      const o = wd[c.dataIndex];
+      return rows.length ? ` ${Math.round(o.count / rows.length * 100)}% of uploads · ${fmt(o.shorts)} Shorts` : "";
+    };
+    draw("dowCountChart", {
+      type: "bar",
+      data: { labels: DOW, datasets: [bar("Uploads", wd.map(o => o.count), t.s1, { maxBarThickness: 40 })] },
+      options: countOpts
+    });
+
+    const viewOpts = baseOptions(t);
+    viewOpts.plugins.tipLabels = { enabled: true, color: t.text, format: v => compact(v) };
+    viewOpts.plugins.tooltip.callbacks.afterLabel = c => {
+      const o = wd[c.dataIndex];
+      return ` Average: ${fmt(o.avg)} · ${fmt(o.count)} videos`;
+    };
+    draw("dowViewsChart", {
+      type: "bar",
+      data: { labels: DOW, datasets: [bar("Median views", wd.map(o => o.median), t.s1, { maxBarThickness: 40 })] },
+      options: viewOpts
+    });
+
+    const maxCount = Math.max(...wd.map(o => o.count));
+    document.getElementById("dowTable").innerHTML =
+      `<thead><tr><th>Day</th><th class="num">Uploads</th><th class="num">Share</th><th class="num">Shorts</th>
+        <th class="num">Total views</th><th class="num">Median views</th><th class="num">Avg views</th>
+        <th class="num">Total likes</th><th class="num">Likes / 1K views</th></tr></thead><tbody>` +
+      wd.map(o => `<tr class="${o.count && o.count === maxCount ? "best" : ""}"><td>${DOW_LONG[o.i]}</td>
+        <td class="num">${fmt(o.count)}</td>
+        <td class="num">${rows.length ? (o.count / rows.length * 100).toFixed(1) + "%" : "–"}</td>
+        <td class="num">${fmt(o.shorts)}</td>
+        <td class="num">${fmt(o.viewsSum)}</td>
+        <td class="num">${fmt(o.median)}</td>
+        <td class="num">${fmt(o.avg)}</td>
+        <td class="num">${fmt(o.likes)}</td>
+        <td class="num">${per1k(o.likes, o.viewsSum).toFixed(1)}</td></tr>`).join("") + "</tbody>";
+
+    // Views and likes over time: two charts, one axis each
+    draw("viewsChart", {
+      type: "bar",
+      data: { labels, datasets: [bar("Views", s.map(b => b.views), t.s1)] },
+      options: baseOptions(t)
+    });
+    draw("likesChart", {
+      type: "bar",
+      data: { labels, datasets: [bar("Likes", s.map(b => b.likes), t.s1)] },
+      options: baseOptions(t)
+    });
+
+    // Top 10 table (titles set with textContent, never as HTML)
+    const top = [...rows].sort((a, b) => b.views - a.views).slice(0, 10);
+    const tbl = document.getElementById("topTable");
+    tbl.innerHTML = `<thead><tr><th>#</th><th>Title</th><th>Uploaded</th><th>Day</th><th>Type</th><th class="num">Length</th>
+      <th class="num">Views</th><th class="num">Likes</th><th class="num">Likes / 1K views</th><th class="num">Comments</th></tr></thead>`;
+    const tb = document.createElement("tbody");
+    if (!top.length) tb.innerHTML = `<tr><td colspan="10" class="empty">No videos uploaded in this range.</td></tr>`;
+    top.forEach((v, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${i + 1}</td><td><a target="_blank" rel="noopener"></a></td><td>${prettyDay(v.date)}</td>
+        <td>${DOW[v.dow]}</td><td><span class="pill">${v.type === "Short" ? "Short" : "Normal"}</span></td>
+        <td class="num">${durationText(v.durationS)}</td><td class="num">${fmt(v.views)}</td><td class="num">${fmt(v.likes)}</td>
+        <td class="num">${per1k(v.likes, v.views).toFixed(1)}</td><td class="num">${fmt(v.comments)}</td>`;
+      const a = tr.querySelector("a");
+      a.textContent = v.title;
+      a.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(v.id);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+  }
+
+  // ---------- header and footer ----------
+  const ageDays = Math.floor((Date.now() - generatedAt.getTime()) / DAY_MS);
+  const lastUpload = videos.length ? videos[videos.length - 1] : null;
+  document.getElementById("asof").textContent =
+    `Source: core.yt_api · ${fmt(videos.length)} videos · data refreshed ${generatedAt.toLocaleString()}` +
+    (lastUpload ? ` · latest upload ${prettyDay(lastUpload.date)}` : "");
+  if (ageDays >= 2) {
+    const el = document.getElementById("stale");
+    el.textContent = `Data is ${ageDays} days old. Check the produce_json, update_db and data_quality runs in Airflow.`;
+    el.classList.add("show");
+  }
+  document.getElementById("footer").textContent =
+    "Built by the Airflow build_dashboard task after each data_quality run. Upload dates are UTC. " +
+    "Views and likes are lifetime totals as of the last load, so older videos have had longer to collect them. " +
+    "This page reloads every 15 minutes.";
+
+  // ---------- wiring ----------
+  const grid = document.getElementById("grid");
+  if (!allSamples.length) document.getElementById("samples").style.display = "none";
+  else if (allSamples.length < 8) {
+    document.getElementById("samplesTitle").textContent = `Last ${allSamples.length} sample${allSamples.length === 1 ? "" : "s"}`;
+    document.getElementById("samplesDesc").textContent +=
+      ` Only ${allSamples.length} daily extract${allSamples.length === 1 ? " is" : "s are"} in the data folder so far.`;
+  }
+  if (typeof Chart === "undefined") {
+    grid.innerHTML = '<p class="empty">Charts need internet access to load Chart.js from cdnjs.</p>';
+    return;
+  }
+  if (!videos.length) {
+    grid.innerHTML = '<p class="empty">core.yt_api is empty. Run the pipeline first.</p>';
+    return;
+  }
+
+  document.getElementById("rangeSeg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.range = b.dataset.range;
+    state.grain = DEFAULT_GRAIN[state.range];   // readable default; the user can still override it
+    save(); render();
+  });
+  document.getElementById("grainSeg").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.grain = b.dataset.grain; save(); render();
+  });
+
+  Chart.register(tipLabels);
+  Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+  render();
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", render);
+})();
+</script>
+</body>
+</html>
