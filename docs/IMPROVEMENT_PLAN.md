@@ -8,7 +8,7 @@ Findings from a project review on 9 November 2026. Measurements are from that da
 
 - [ ] **1. Rotate the exposed API key.** Effort: S
   - Why: an exposed key can be used by anyone and can use up the project's quota.
-- [ ] **2. Change view, like and comment counts to `BIGINT` in both schemas, with an `ALTER TABLE` for the existing tables.** Effort: S
+- [x] **2. Change view, like and comment counts to `BIGINT` in both schemas, with an `ALTER TABLE` for the existing tables.** Effort: S
   - Why: the top video is at 91% of the `INT` limit, so loads will fail around May 2027.
 - [ ] **3. Stop before any delete if a pull is empty or far smaller than the table, and add a Soda row count check.** Effort: S
   - Why: a bad API response could wipe the warehouse while every check still passes.

@@ -161,9 +161,9 @@ Both layers use a table named `yt_api` with quoted, mixed-case column names.
 | `Upload_Date` | `TIMESTAMP` | `TIMESTAMP` |
 | `Duration` | `VARCHAR(20)` (ISO-8601, e.g. `PT19M3S`) | `TIME` (e.g. `00:19:03`) |
 | `Video_Type` | — | `VARCHAR(10)`: `Short` (≤ 60s) or `Normal` |
-| `Video_Views` | `INT` | `INT` |
-| `Likes_Count` | `INT` | `INT` |
-| `Comments_Count` | `INT` | `INT` |
+| `Video_Views` | `BIGINT` | `BIGINT` |
+| `Likes_Count` | `BIGINT` | `BIGINT` |
+| `Comments_Count` | `BIGINT` | `BIGINT` |
 
 **Transformations (staging → core):**
 - The ISO-8601 duration (`PT1H2M3S`) is parsed and stored as `TIME`.
